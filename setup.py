@@ -96,7 +96,7 @@ class LorisInstallCommand(install):
                 os.chmod(filepath, t_permissions)
             if uid != t_uid or gid != t_gid:
                 # Ownership incorrect
-                stdout.write("chowing %s\n" % (filepath,))
+                stdout.write("chowning %s\n" % (filepath,))
                 os.chown(filepath, t_uid, t_gid)
         except Exception as e:
             stderr.write("Could not set permissions properly for %s\n" % (filepath,))
