@@ -79,6 +79,46 @@ class LorisInstallCommand(install):
         ('loris-group=', None, GROUP_HELP),
     ]
 
+    def __set_permissions(self, filepath, t_uid, t_gid, t_permissions):
+        """
+        Confirms file ownership and permissions, doing nothing if already correct.
+        """
+        if not os.path.exists(filepath):
+            raise OSError("%s does not exist" % filepath)
+        s = os.stat(filepath)
+        uid = s[4]
+        gid = s[5]
+        permissions = oct(stat.S_IMODE(s.st_mode))
+        try:
+            if permissions != oct(t_permissions):
+                stdout.write("chmoding %s\n" % (filepath,))
+                # Permissions incorrect
+                os.chmod(filepath, t_permissions)
+            if uid != t_uid or gid != t_gid:
+                # Ownership incorrect
+                stdout.write("chowing %s\n" % (filepath,))
+                os.chown(filepath, t_uid, t_gid)
+        except Exception as e:
+            stderr.write("Could not set permissions properly for %s\n" % (filepath,))
+            raise
+
+    def __set_all_permissions(self):
+        # Order deliberate
+        # don't lock ourselves out of directories we need to change permissions in
+        perms = [
+            (os.path.join(self.www_dir, WSGI_FILE_NAME), 0755),
+            (os.path.join(self.www_dir, 'index.txt'), 0644),
+            (os.path.join(self.www_dir, 'icons', 'favicon.ico'), 0644),
+            (self.image_cache, 0755),
+            (self.info_cache, 0755),
+            (self.tmp_dir, 0755),
+            (self.www_dir, 0755),
+            (self.log_dir, 0755),
+            (self.config_dir, 0755)
+        ]
+        for x in perms:
+            self.__set_permissions(x[0], self.loris_owner_id, self.loris_group_id, x[1])
+
     def initialize_options(self):
         self.kdu_expand = KDU_EXPAND_DEFAULT
         self.libkdu = LIBKDU_DEFAULT
@@ -120,6 +160,7 @@ class LorisInstallCommand(install):
             stdout.write('*'*80+'\n')
         self.do_egg_install()
         self.__update_and_deploy_config()
+        self.__set_all_permissions()
 
     def __check_user(self):
         try:
@@ -150,15 +191,7 @@ Please create this user, e.g.:
         if not os.path.exists(d):
             os.makedirs(d)
             stdout.write('Created %s\n' % (d,))
-            os.chown(d, self.loris_owner_id, self.loris_group_id)
-            stdout.write('Changed ownership of %s to %s:%s\n' %
-                (d,self.loris_owner,self.loris_group))
 
-        s = os.stat(d)
-        permissions = oct(stat.S_IMODE(s.st_mode))
-        if permissions != oct(0755):
-            os.chmod(d, 0755)
-            stdout.write('Set permissions for %s to 0755\n' % (d,))
 
     def __write_wsgi(self):
         config_file_path = os.path.join(self.config_dir, CONFIG_FILE_NAME)
@@ -170,10 +203,12 @@ from loris.webapp import create_app
 # site.addsitedir('/path/to/my/virtualenv/lib/python2.x/site-packages')
 application = create_app(config_file_path='%s')
 ''' % (config_file_path,)
-        with open(wsgi_file_path, 'w') as f:
-            f.write(content)
-        os.chmod(wsgi_file_path, 0755)
-        os.chown(wsgi_file_path, self.loris_owner_id, self.loris_group_id)
+        if not os.path.exists(wsgi_file_path):
+            with open(wsgi_file_path, 'w') as f:
+                f.write(content)
+        else:
+            stdout.write("%s already exists, not clobbering\n" % (wsgi_file_path,))
+
     @property
     def __here(self):
         return os.path.dirname(os.path.realpath(__file__))
@@ -186,11 +221,14 @@ application = create_app(config_file_path='%s')
         favicon_target_dir = os.path.join(self.www_dir, 'icons')
         favicon_target = os.path.join(favicon_target_dir, 'favicon.ico')
         self.__init_dir(favicon_target_dir)
-        shutil.copyfile(index_src, index_target)
-        shutil.copyfile(favicon_src, favicon_target)
-        for f in (index_target, favicon_target):
-            os.chmod(f, 0644)
-            os.chown(f, self.loris_owner_id, self.loris_group_id)
+        if not os.path.exists(index_target):
+            shutil.copyfile(index_src, index_target)
+        else:
+            stdout.write("%s already exists, not clobbering\n" % (index_target,))
+        if not os.path.exists(favicon_target):
+            shutil.copyfile(favicon_src, favicon_target)
+        else:
+            stdout.write("%s already exists, not clobbering\n" % (favicon_target,))
 
     def __update_and_deploy_config(self):
         from configobj import ConfigObj # can do now that we've installed it!
@@ -212,7 +250,10 @@ application = create_app(config_file_path='%s')
         config['transforms']['jp2']['tmp_dp'] = self.tmp_dir
 
         config.filename = config_file_target
-        config.write()
+        if not os.path.exists(config_file_target):
+            config.write()
+        else:
+            stdout.write("%s already exists, not clobbering\n" % (config_file_target,))
 
 install_requires = []
 for d in DEPENDENCIES:
