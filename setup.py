@@ -197,10 +197,10 @@ Please create this user, e.g.:
         config_file_path = os.path.join(self.config_dir, CONFIG_FILE_NAME)
         wsgi_file_path = os.path.join(self.www_dir, WSGI_FILE_NAME)
         content = '''#!/usr/bin/env python
-from loris.webapp import create_app
 # Uncomment and configure below if you are using virtualenv
 # import site
 # site.addsitedir('/path/to/my/virtualenv/lib/python2.x/site-packages')
+from loris.webapp import create_app
 application = create_app(config_file_path='%s')
 ''' % (config_file_path,)
         if not os.path.exists(wsgi_file_path):
